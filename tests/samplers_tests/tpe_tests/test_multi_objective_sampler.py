@@ -154,6 +154,7 @@ def test_multi_objective_sample_independent_float_distributions(
     value_fn: Callable[[int], float] | None = None
 
     if float_dist.step:
+
         def value_fn(number: int) -> float:
             return int(random.random() * 1000) * 0.1
 
@@ -468,9 +469,9 @@ def frozen_trial_factory(
         1.0, 100.0
     ),
     value_fn: Callable[[int], int | float] | None = None,
-    state_fn: Callable[
-        [int], optuna.trial.TrialState
-    ] = lambda _: optuna.trial.TrialState.COMPLETE,
+    state_fn: Callable[[int], optuna.trial.TrialState] = lambda _: (
+        optuna.trial.TrialState.COMPLETE
+    ),
 ) -> optuna.trial.FrozenTrial:
     if value_fn is None:
         value = random.random() * 99.0 + 1.0

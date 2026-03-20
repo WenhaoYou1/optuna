@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from collections.abc import Container
 from collections.abc import Iterable
 from collections.abc import Mapping
+from collections.abc import Sequence
 import copy
 from numbers import Real
 import threading
 from typing import Any
-from typing import Callable
 from typing import cast
-from typing import Sequence
 from typing import TYPE_CHECKING
 from typing import Union
 
@@ -25,7 +25,6 @@ from optuna._convert_positional_args import convert_positional_args
 from optuna._deprecated import deprecated_func
 from optuna._experimental import experimental_func
 from optuna._imports import _LazyImport
-from optuna._typing import JSONSerializable
 from optuna._warnings import optuna_warn
 from optuna.distributions import _convert_old_distribution_to_new_distribution
 from optuna.distributions import BaseDistribution
@@ -45,6 +44,7 @@ from optuna.trial import TrialState
 _dataframe = _LazyImport("optuna.study._dataframe")
 
 if TYPE_CHECKING:
+    from optuna._typing import JSONSerializable
     from optuna.study._dataframe import pd
     from optuna.trial import FrozenTrial
     from optuna.trial import Trial

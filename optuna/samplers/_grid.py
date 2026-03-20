@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
-from collections.abc import Sequence
 import itertools
 from numbers import Real
 from typing import Any
@@ -11,16 +9,19 @@ from typing import Union
 import numpy as np
 
 from optuna._warnings import optuna_warn
-from optuna.distributions import BaseDistribution
 from optuna.logging import get_logger
 from optuna.samplers import BaseSampler
 from optuna.samplers._lazy_random_state import LazyRandomState
-from optuna.trial import FrozenTrial
 from optuna.trial import TrialState
 
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+    from collections.abc import Sequence
+
+    from optuna.distributions import BaseDistribution
     from optuna.study import Study
+    from optuna.trial import FrozenTrial
 
 
 GridValueType = Union[str, float, int, bool, None]
@@ -189,7 +190,7 @@ class GridSampler(BaseSampler):
             raise ValueError(message)
 
         if param_name not in self._search_space:
-            message = "The parameter name, {}, is not found in the given grid.".format(param_name)
+            message = f"The parameter name, {param_name}, is not found in the given grid."
             raise ValueError(message)
 
         grid_id = trial.system_attrs["grid_id"]
@@ -225,9 +226,9 @@ class GridSampler(BaseSampler):
             return
 
         message = (
-            "{} contains a value with the type of {}, which is not supported by "
-            "`GridSampler`. Please make sure a value is `str`, `int`, `float`, `bool`"
-            " or `None` for persistent storage.".format(param_name, type(param_value))
+            f"{param_name} contains a value with the type of {type(param_value)}, "
+            "which is not supported by `GridSampler`. Please make sure a value is `str`, "
+            "`int`, `float`, `bool` or `None` for persistent storage."
         )
         optuna_warn(message)
 

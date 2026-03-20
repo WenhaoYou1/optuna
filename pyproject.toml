@@ -42,11 +42,6 @@ dependencies = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-benchmark = [
-  "asv>=0.5.0",
-  "cma",
-  "virtualenv"
-]
 checking = [
   "mypy",
   "mypy_boto3_s3",
@@ -144,7 +139,6 @@ exclude = [
   "build",
   "dist",
   "docs",
-  ".asv",
   "optuna/storages/_grpc/auto_generated",
 ]
 
@@ -157,7 +151,7 @@ select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["optuna", "tests", "docs", "benchmarks"]
+known-first-party = ["optuna", "tests", "docs"]
 lines-after-imports = 2
 force-single-line = true
 force-sort-within-sections = true
@@ -169,18 +163,6 @@ order-by-type = false
 
 [tool.ruff.format]
 docstring-code-format = true
-exclude = [
-  "tutorial/20_recipes/013_wilcoxon_pruner.py",
-  "tutorial/20_recipes/007_optuna_callback.py",
-  "tutorial/20_recipes/005_user_defined_sampler.py",
-  "tests/test_distributions.py",
-  "tests/visualization_tests/test_utils.py",
-  "tests/storages_tests/test_storages.py",
-  "tests/samplers_tests/tpe_tests/test_multi_objective_sampler.py",
-  "tests/samplers_tests/test_qmc.py",
-  "tests/gp_tests/test_acqf.py",
-  "tests/artifacts_tests/test_upload_artifact.py",
-]
 
 [tool.pytest.ini_options]
 addopts = "--color=yes"

@@ -103,6 +103,8 @@ class GPRegressor:
         self._is_categorical = is_categorical
         self._X_train = X_train
         self._y_train = y_train
+        self._X_all = X_train
+        self._y_all = y_train
         self._squared_X_diff = (X_train.unsqueeze(-2) - X_train.unsqueeze(-3)).square_()
         if self._is_categorical.any():
             self._squared_X_diff[..., self._is_categorical] = (
@@ -117,14 +119,14 @@ class GPRegressor:
 
     @property
     def length_scales(self) -> np.ndarray:
-        return 1.0 / np.sqrt(self.inverse_squared_lengthscales.detach().numpy())
+        return 1.0 / np.sqrt(self.inverse_squared_lengthscales.detach().cpu().numpy())
 
     def _cache_matrix(self) -> None:
         assert self._cov_Y_Y_chol is None and self._cov_Y_Y_inv_Y is None, (
             "Cannot call cache_matrix more than once."
         )
         with torch.no_grad():
-            cov_Y_Y = self.kernel().detach().numpy()
+            cov_Y_Y = self.kernel().detach().cpu().numpy()
 
         cov_Y_Y[np.diag_indices(self._X_train.shape[0])] += self.noise_var.item()
         cov_Y_Y_chol = np.linalg.cholesky(cov_Y_Y)
@@ -133,7 +135,7 @@ class GPRegressor:
         # cf. https://github.com/optuna/optuna/issues/6230
         cov_Y_Y_inv_Y = scipy.linalg.solve_triangular(
             cov_Y_Y_chol.T,
-            scipy.linalg.solve_triangular(cov_Y_Y_chol, self._y_train.numpy(), lower=True),
+            scipy.linalg.solve_triangular(cov_Y_Y_chol, self._y_train.cpu().numpy(), lower=True),
             lower=False,
         )
         # NOTE(nabenabe): Here we use NumPy to guarantee the reproducibility from the past.
@@ -145,6 +147,40 @@ class GPRegressor:
         self.kernel_scale.grad = None
         self.noise_var = self.noise_var.detach()
         self.noise_var.grad = None
+
+    def append_running_data(self, X_running: torch.Tensor, y_running: torch.Tensor) -> None:
+        assert self._cov_Y_Y_chol is not None and self._cov_Y_Y_inv_Y is not None, (
+            "Call _cache_matrix before append_running_data"
+        )
+        n_train = self._X_train.shape[0]
+        n_running = X_running.shape[0]
+        n_total = n_train + n_running
+
+        cov_Y_Y_chol = np.zeros((n_total, n_total), dtype=np.float64)
+        cov_Y_Y_chol[:n_train, :n_train] = self._cov_Y_Y_chol.numpy()
+        with torch.no_grad():
+            kernel_running_train = self.kernel(X_running).detach().cpu().numpy()
+            kernel_running_running = self.kernel(X_running, X_running).detach().cpu().numpy()
+            kernel_running_running[np.diag_indices(n_running)] += self.noise_var.item()
+
+        cov_Y_Y_chol[n_train:, :n_train] = scipy.linalg.solve_triangular(
+            self._cov_Y_Y_chol.cpu().numpy(), kernel_running_train.T, lower=True
+        ).T
+        cov_Y_Y_chol[n_train:, n_train:] = np.linalg.cholesky(
+            kernel_running_running
+            - cov_Y_Y_chol[n_train:, :n_train] @ cov_Y_Y_chol[n_train:, :n_train].T
+        )
+        self._y_all = torch.cat([self._y_train, y_running], dim=0)
+        cov_Y_Y_inv_Y = scipy.linalg.solve_triangular(
+            cov_Y_Y_chol.T,
+            scipy.linalg.solve_triangular(cov_Y_Y_chol, self._y_all.cpu().numpy(), lower=True),
+            lower=False,
+        )
+
+        # NOTE(nabenabe): Here we use NumPy to guarantee the reproducibility from the past.
+        self._cov_Y_Y_chol = torch.from_numpy(cov_Y_Y_chol)
+        self._cov_Y_Y_inv_Y = torch.from_numpy(cov_Y_Y_inv_Y)
+        self._X_all = torch.cat([self._X_train, X_running], dim=0)
 
     def kernel(
         self, X1: torch.Tensor | None = None, X2: torch.Tensor | None = None
@@ -193,7 +229,7 @@ class GPRegressor:
         )
         is_single_point = x.ndim == 1
         x_ = x if not is_single_point else x.unsqueeze(0)
-        mean = torch.linalg.vecdot(cov_fx_fX := self.kernel(x_), self._cov_Y_Y_inv_Y)
+        mean = torch.linalg.vecdot(cov_fx_fX := self.kernel(x_, self._X_all), self._cov_Y_Y_inv_Y)
         # K @ inv(C) = V --> K = V @ C --> K = V @ L @ L.T
         V = torch.linalg.solve_triangular(
             self._cov_Y_Y_chol,
@@ -264,7 +300,7 @@ class GPRegressor:
         # pathological behavior of maximum likelihood estimation.
         initial_raw_params = np.concatenate(
             [
-                np.log(self.inverse_squared_lengthscales.detach().numpy()),
+                np.log(self.inverse_squared_lengthscales.detach().cpu().numpy()),
                 [
                     np.log(self.kernel_scale.item()),
                     # We add 0.01 * minimum_noise to initial noise_var to avoid instability.
@@ -275,7 +311,7 @@ class GPRegressor:
 
         def loss_func(raw_params: np.ndarray) -> tuple[float, np.ndarray]:
             raw_params_tensor = torch.from_numpy(raw_params).requires_grad_(True)
-            with torch.enable_grad():  # type: ignore[no-untyped-call]
+            with torch.enable_grad():
                 self.inverse_squared_lengthscales = torch.exp(raw_params_tensor[:n_params])
                 self.kernel_scale = torch.exp(raw_params_tensor[n_params])
                 self.noise_var = (
@@ -288,7 +324,7 @@ class GPRegressor:
                 # scipy.minimize requires all the gradients to be zero for termination.
                 raw_noise_var_grad = raw_params_tensor.grad[n_params + 1]  # type: ignore
                 assert not deterministic_objective or raw_noise_var_grad == 0
-            return loss.item(), raw_params_tensor.grad.detach().numpy()  # type: ignore
+            return loss.item(), raw_params_tensor.grad.detach().cpu().numpy()  # type: ignore
 
         with single_blas_thread_if_scipy_v1_15_or_newer():
             # jac=True means loss_func returns the gradient for gradient descent.
